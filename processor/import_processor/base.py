@@ -8,9 +8,13 @@ from abc import ABC, abstractmethod
 from typing import TypeVar, Optional
 import logging
 
-from knowledge.processor.import_process.config import ImportConfig, get_config
-from knowledge.processor.import_process.exceptions import ImportProcessError
-from knowledge.utils.task_util import add_running_task, add_done_task
+
+
+from processor.import_processor.config import ImportConfig, get_config
+
+#from knowledge.processor.import_process.config import ImportConfig, get_config
+#from knowledge.processor.import_process.exceptions import ImportProcessError
+#from knowledge.utils.task_util import add_running_task, add_done_task
 
 T = TypeVar("T")  # 泛型状态类型
 
@@ -31,8 +35,8 @@ class BaseNode(ABC):
                 return state
 
         # 作为 LangGraph 节点使用
-        node = MyNode()
-        workflow.add_node("my_node", node)
+        nodes = MyNode()
+        workflow.add_node("my_node", nodes)
     """
 
     name: str = "base_node"  # 节点名称，子类应覆盖
