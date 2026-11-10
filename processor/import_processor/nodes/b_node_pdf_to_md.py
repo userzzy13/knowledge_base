@@ -8,7 +8,7 @@ from pathlib import Path
 import stem
 import requests
 
-from config.mineru_config import mineru_config
+from Config.mineru_config import mineru_config
 from processor.import_processor.base import BaseNode, setup_logging
 from processor.import_processor.exceptions import StateFieldError, FileProcessingError, PdfConversionError
 from processor.import_processor.state import ImportGraphState

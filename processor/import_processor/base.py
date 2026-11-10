@@ -12,7 +12,7 @@ import logging
 
 from processor.import_processor.config import ImportConfig, get_config
 
-#from knowledge.processor.import_process.config import ImportConfig, get_config
+#from knowledge.processor.import_process.Config import ImportConfig, get_config
 #from knowledge.processor.import_process.exceptions import ImportProcessError
 #from knowledge.utils.task_util import add_running_task, add_done_task
 
