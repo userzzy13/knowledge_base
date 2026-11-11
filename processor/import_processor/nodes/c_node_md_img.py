@@ -9,6 +9,9 @@ from typing import Tuple, List, Dict, Deque
 from processor.import_processor.base import BaseNode
 from processor.import_processor.exceptions import StateFieldError, FileProcessingError
 from processor.import_processor.state import ImportGraphState
+import base64
+from utils.llm_utils import get_llm_client
+from Config.llm_config import llm_config
 
 
 class NodeMDImg(BaseNode):
@@ -161,9 +164,38 @@ class NodeMDImg(BaseNode):
             request_times.append(current_time)
             logging.getLogger().info(f"API请求时间戳已记录，当前{window_seconds}秒窗口内请求数：{len(request_times)}")
 
-        #步骤三方法2
-        def _summarize_image():
-            pass
+        #步骤三方法2（调用多模态大模型（如 Qwen-VL）来生成图片的中文摘要，作为 Markdown 图片的 Alt Text）
+        def _summarize_image(img_path:str, root_folder : str, image_content : Tuple[str,str]) -> str:
+
+            with open(img_path, "rb") as img_file:
+                base64_image = base64.b64encode(img_file.read()).decode("utf-8")
+            try:
+                chat_model = get_llm_client(llm_config.vl_model)
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": f"""这是"{root_folder}"文件中的一张图片，图片上文部分为"{image_content[0]}"，下文部分为"{image_content[1]}"，请用中文简要总结这张图片的内容，用于 Markdown 图片标题。"""
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ]
+
+                response = chat_model.invoke(messages)
+                return response.content.strip().replace("\n", "")
+            except Exception as e:
+                self.logger.error(f"图像总结失败：{img_path}, 错误{e}")
+                return "图片描述"
+
+            
 
 
 
