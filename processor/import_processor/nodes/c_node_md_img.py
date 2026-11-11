@@ -6,12 +6,17 @@ import time
 from collections import deque
 from pathlib import Path
 from typing import Tuple, List, Dict, Deque
+
+from minio import Minio
+
+from Config import minio_config
 from processor.import_processor.base import BaseNode
 from processor.import_processor.exceptions import StateFieldError, FileProcessingError
 from processor.import_processor.state import ImportGraphState
 import base64
 from utils.llm_utils import get_llm_client
 from Config.llm_config import llm_config
+from utils.minio_utils import get_minio_client
 
 
 class NodeMDImg(BaseNode):
@@ -23,7 +28,7 @@ class NodeMDImg(BaseNode):
 
     def process(self, state: ImportGraphState):
 
-        logging.info(f"{name}开始执行.....")
+        logging.info(f"{self.name}开始执行.....")
         #1.参数处理
         md_content, md_path_obj, images_dir = self._step_1_get_content(state)
 
@@ -47,6 +52,9 @@ class NodeMDImg(BaseNode):
         state["md_content"] = new_md_content
         state["md_path"] = new_md_file_name
         return state
+
+
+
 
          #步骤1
     def _step_1_get_content(self,state: ImportGraphState):
@@ -77,6 +85,9 @@ class NodeMDImg(BaseNode):
             context = self._find_image_in_md(md_content, image_file)
             target_images.append((image_file,img_path,context))
         return target_images
+
+
+
         #步骤二方法一
     def _find_image_in_md(self,md_content:str,image_file:str,context_len:int = 100) -> Tuple[str, str]:
         pattern = re.compile(r"!\[.*?\]\(.*?" + re.escape(image_file) + r".*?\)")
@@ -89,6 +100,11 @@ class NodeMDImg(BaseNode):
         pre_text = md_content[max(0,start-context_len):start]
         post_text = md_content[end:min(len(md_content),end+context_len)]
         return pre_text , post_text
+
+
+
+
+
     def _step_3_generate_summaries(self,md_path_obj_stem:str, target_images:list[tuple[str,str,tuple[str,str]]]) -> dict[str, str]:
         """
         :param self:
@@ -104,6 +120,12 @@ class NodeMDImg(BaseNode):
             #调用大模型
             summaries[img_file] = self._summarize_image(img_path, root_folder=md_path_obj_stem, image_content=context)
         return summaries
+
+
+
+
+
+
     #步骤三方法一：时间窗口限流
     def _apply_api_rate_limit(
             self,
@@ -138,8 +160,13 @@ class NodeMDImg(BaseNode):
         # 3. 记录当前请求时间戳，加入滑动窗口队列
         request_times.append(current_time)
         logging.getLogger().info(f"API请求时间戳已记录，当前{window_seconds}秒窗口内请求数：{len(request_times)}")
+
+
+
+
+
     #步骤三方法2（调用多模态大模型（如 Qwen-VL）来生成图片的中文摘要，作为 Markdown 图片的 Alt Text）
-    def _summarize_image(img_path:str, root_folder : str, image_content : Tuple[str,str]) -> str:
+    def _summarize_image(self,img_path:str, root_folder : str, image_content : Tuple[str,str]) -> str:
         with open(img_path, "rb") as img_file:
             base64_image = base64.b64encode(img_file.read()).decode("utf-8")
         try:
@@ -167,3 +194,39 @@ class NodeMDImg(BaseNode):
             self.logger.error(f"图像总结失败：{img_path}, 错误{e}")
             return "图片描述"
 
+
+
+
+    def _step_4_upload_and_replace(self,md_path_obj_stem:str,target_images:list[tuple[str,str,tuple[str,str]]],summaries:dict[str, str],md_content:str):
+
+        #0 获取minio客户端
+        minio_client = get_minio_client()
+        #构造上传目录
+        minio_img_dir = minio_config.img_dir
+        upload_dir = f"{minio_img_dir}/{md_path_obj_stem}"
+
+
+        #1 清理minio目录
+        self._clean_minio_directory(minio_client, upload_dir)
+
+        #2 批量上传图片，获取minio的url
+
+        urls = self.upload_images_batch(minio_client,upload_dir,target_images)
+
+        #3 将摘要和url合并
+
+        image_info = self._merge_summary_and_url(summaries, urls)
+
+
+        #4 替换md文件的摘要和路径
+        md_content = self._process_md_file(md_content, image_info)
+
+
+
+        return md_content
+
+    def _clean_minio_directory(minio_client:Minio, upload_dir:str):
+        pass
+
+    def upload_images_batch(minio_client, upload_dir, target_images):
+        pass
