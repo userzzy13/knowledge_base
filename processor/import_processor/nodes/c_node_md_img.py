@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Tuple, List, Dict, Deque
 
 from minio import Minio
+from pydantic import json
 
-from Config import minio_config
-from processor.import_processor.base import BaseNode
+from Config.minio_config import minio_config
+from processor.import_processor.base import BaseNode, setup_logging
 from processor.import_processor.exceptions import StateFieldError, FileProcessingError
 from processor.import_processor.state import ImportGraphState
 import base64
@@ -225,8 +226,137 @@ class NodeMDImg(BaseNode):
 
         return md_content
 
-    def _clean_minio_directory(minio_client:Minio, upload_dir:str):
+
+
+
+
+    #步骤四方法1
+    def _clean_minio_directory(self,minio_client:Minio, upload_dir:str):
         pass
 
-    def upload_images_batch(minio_client, upload_dir, target_images):
-        pass
+
+
+
+
+    #步骤四方法2
+    def upload_images_batch(self,minio_client, upload_dir, target_images):
+        """
+        #容器存放url
+        :param minio_client: minio的客户端
+        :param upload_dir:上传目录
+        :param target_images:步骤2返回的一个元组类型的列表
+        :object_name:用于传入minio客户端的值，minio的对象名字
+        :return:可以访问minio图片的url
+        """
+        urls = {}
+        for img_file,img_path,_ in target_images:
+            object_name = f"{upload_dir}/{img_file}"
+            urls[img_file] = self.upload_to_minio(minio_client,img_path,object_name)
+        return urls
+
+
+
+    #步骤四方法3
+    def upload_to_minio(self,minio_client:Minio,img_path:str, object_name:str):
+        # 上传本地文件至MinIO（fput_object：文件流上传，适合大文件）
+        try:
+            minio_client.fput_object(
+                bucket_name=minio_config.bucket_name,  # MinIO存储桶名（从配置读取）
+                object_name=object_name,  # MinIO对象名称
+                file_path=img_path,  # 本地文件路径
+                # 关键规则：多后缀文件仅拆分最后一个，如test.tar.gz拆分为("test.tar", ".gz")。
+                content_type=f"image/{os.path.splitext(img_path)[1][1:]}"
+            )
+        except Exception as e:
+            self.logger.error(f"图片上传MinIO失败：{img_path}，错误信息：{str(e)}")
+        # 构造MinIO基础访问URL
+        base_url = f"http://{minio_config.endpoint}/{minio_config.bucket_name}"
+        return f"{base_url}/{object_name}"
+
+
+
+
+
+    #步骤四方法4
+    def _merge_summary_and_url(self,summaries:dict[str,str],urls:dict[str,str])->dict[str,tuple[str,str]]:
+        """
+
+        :param summaries:
+        :param urls:
+        :return:
+        """
+        img_info = {}
+        for img_file,summary in summaries.items():
+            if url := urls.get(img_file):
+                img_info[img_file] = (summary,url)
+
+        return img_info
+
+
+
+
+    #步骤四方法5
+    def _process_md_file(self,md_content:str,img_info:dict[str,tuple[str,str]]):
+        """
+
+        :param md_content:
+        :param img_info:
+        :return:
+        """
+        # 遍历 image_info 字典的每一项：key=图片文件名，value=(摘要, 新URL)
+        for image_file, (summary, new_url) in img_info.items():
+            # 正则匹配MD图片标签，忽略大小写
+            # 正则规则：![任意描述](任意路径+图片文件名+任意后缀)
+            # re.escape: 转义图片文件名中的特殊字符，避免正则语法错误
+            pattern = re.compile(r"!\[.*?\]\(.*?" + re.escape(image_file) + r".*?\)")
+
+            # 替换匹配内容：使用新摘要作为图片描述，新URL作为图片路径
+            # pattern.sub(替换规则, 待替换文本)
+            # md_content = ..., 替换后原地更新
+            md_content = pattern.sub(lambda m: f"![{summary}]({new_url})", md_content)
+
+        self.logger.info(f"MD文件图片引用替换完成，共替换{len(img_info)}处图片引用")
+
+        return md_content
+
+    def _step_5_backup_new_md_file(self, origin_md_path: str, md_content: str) -> str:
+        """
+        步骤5：将处理后的MD内容保存为新文件（原文件不变，避免数据丢失）
+        新文件命名规则：原文件名 + _new.md（如test.md → test_new.md）
+        :param origin_md_path: 原始MD文件完整路径
+        :param md_content: 处理后的新MD内容
+        :return: 新MD文件的完整路径
+        """
+        # 构造新文件路径：替换原后缀为 _new.md
+        new_md_file_name = os.path.splitext(origin_md_path)[0] + "_new.md"
+
+        # 写入新MD内容（覆盖写入，若文件已存在则更新）
+        with open(new_md_file_name, "w", encoding="utf-8") as f:
+            f.write(md_content)
+
+        self.logger.info(f"处理后MD文件已保存，新文件路径：{new_md_file_name}")
+
+        return new_md_file_name
+
+
+
+
+if __name__ == "__main__":
+
+    setup_logging()
+
+    md_path = r"D:\mineru_poll\H3C\H3C.md"
+    with open(md_path, "r", encoding="utf-8") as f:
+        md_content = f.read()
+
+    init_state = {
+        "md_path": md_path,
+        "md_content": md_content
+    }
+
+    # 执行核心处理流程
+    node_md_img = NodeMDImg()
+    result = node_md_img(init_state)
+
+    logging.getLogger().info(json.dumps(result, ensure_ascii=False, indent=4))
+

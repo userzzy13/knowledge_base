@@ -11,6 +11,7 @@ import logging
 
 
 from processor.import_processor.config import ImportConfig, get_config
+from processor.import_processor.exceptions import ImportProcessError
 
 #from knowledge.processor.import_process.Config import ImportConfig, get_config
 #from knowledge.processor.import_process.exceptions import ImportProcessError
