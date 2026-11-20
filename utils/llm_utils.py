@@ -8,10 +8,16 @@ def get_llm_client(model:str | None = None,json_model:bool = False):
 
     m = model or llm_config.llm_model
 
-    key = (m,json_model,)
+    key = (m,json_model)
     #判断是否击中缓存，如果击中，直接返回缓存中的value
     if key in _llm_client_cache:
         return _llm_client_cache[key]
+
+    extra_body = {"enable_thinking" : False}
+
+    model_kwargs = {}
+    if json_model:
+        model_kwargs["response_format"] = {"type":"json_object"}
 
     #没击中则添加模型实例
     client = ChatOpenAI(
@@ -19,6 +25,9 @@ def get_llm_client(model:str | None = None,json_model:bool = False):
         temperature=llm_config.llm_temperature,
         base_url=llm_config.base_url,
         api_key=llm_config.api_key,
+        extra_body=extra_body,
+        model_kwargs=model_kwargs,
+
     )
 
     _llm_client_cache[key] = client

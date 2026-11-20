@@ -155,7 +155,7 @@ class NodeDocumentSplit(BaseNode):
     #长切方法，步骤4方法1
     def _split_long_section(self,section: Dict[str, str]):
         content = section.get("content", "")
-        if len(content) >= self.config.max_content_length:
+        if len(content) <= self.config.max_content_length:
             return [section]
 
         # 提取章节标题，用于组装子Chunk前缀（保留标题上下文）
